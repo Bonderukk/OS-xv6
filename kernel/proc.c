@@ -296,7 +296,9 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
-  
+  np->mask = p->mask;
+  np->mask = p->mask;
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 

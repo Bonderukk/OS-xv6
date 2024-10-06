@@ -1,0 +1,5 @@
+1. usertrap
+2. Hodnota je SYS_exec - vykonáva sa exec
+3. user-mode. Pretoze sstatus ma hodnotu 0x200000022 co je v binary 0010 0000 0000 0000 0000 0000 0000 0010 0010 a ked je 8. bit, ktory sa vola SPP 0. tak to znamena user-mode
+4. lw	s2,0(zero) num saved in s2
+5. spadlo lebo adresa 0x0 nie je mapovana v jadre co potvrdzuje aj scause. Nazov procesu je initcode a pid 1

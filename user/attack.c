@@ -31,6 +31,7 @@ main(int argc, char *argv[])
             char *after_colon = ptr + strlen(target) + 1;
             if (strlen(after_colon) == 7) {
                 write(2, after_colon, 8);
+                break;
             }
         }
     }

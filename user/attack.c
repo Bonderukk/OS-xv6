@@ -18,8 +18,26 @@ strncmp(const char *p, const char *q, uint n)
   return (uchar)*p - (uchar)*q;
 }
 
-
 int
+main(int argc, char *argv[])
+{
+    char *start = sbrk(PGSIZE * 32);
+    char *end = start + PGSIZE * 32;
+
+
+    for(char *ptr=start; ptr<end; ptr++) {
+        if(strncmp(ptr, "very", 4) == 0) {
+            char *secret = ptr + 24;
+            printf("%s\n", secret);
+            write(2, secret, 8);
+            break;
+        }
+    }
+
+    exit(1);
+}
+
+/*int
 main(int argc, char *argv[])
 {
     char *start = sbrk(PGSIZE * 32);
@@ -38,7 +56,7 @@ main(int argc, char *argv[])
     exit(0);
 }
 
-/*int
+int
 main(int argc, char *argv[])
 {
   // your code here.  you should write the secret to fd 2 using write

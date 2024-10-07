@@ -24,11 +24,11 @@ main(int argc, char *argv[])
 {
     char *start = sbrk(PGSIZE * 32);
     char *end = start + PGSIZE * 32;
-    const char *target = "very very secret pw is:";
+    const char *target = "very very secret pw is: ";
 
     for (char *ptr = start; ptr < end - SECRET_SIZE; ptr++) {
         if (strncmp(ptr, target, strlen(target)) == 0) {
-            char *after_colon = ptr + strlen(target) + 1;
+            char *after_colon = ptr + strlen(target);
             if (strlen(after_colon) == 7) {
                 write(2, after_colon, 8);
                 break;
@@ -37,3 +37,18 @@ main(int argc, char *argv[])
     }
     exit(0);
 }
+
+/*int
+main(int argc, char *argv[])
+{
+  // your code here.  you should write the secret to fd 2 using write
+  // (e.g., write(2, secret, 8)
+  if(argc != 1){
+    printf("Usage: secret the-secret\n");
+    exit(1);
+  }
+  char *end = sbrk(PGSIZE*32);
+  end = end + 8 * PGSIZE;
+  fprintf(2, end+16, 8);
+  exit(1);
+}*/

@@ -295,10 +295,11 @@ fork(void)
     release(&np->lock);
     return -1;
   }
-  np->sz = p->sz;
-  np->mask = p->mask;
-  np->mask = p->mask;
 
+  np->sz = p->sz;
+
+  //set the same trace mask as in parent
+  np->mask = p->mask;
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 

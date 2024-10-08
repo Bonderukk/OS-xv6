@@ -8,21 +8,35 @@ int main(int argc, char *argv[]) {
     pipe(to_parent);
     pipe(to_child);
 
+    
     int pid = fork();
-    if (pid == 0) {
-        //child
-        char received;
+    char *received = "b";
+
+    if(pid == 0) {
+        
+        close(to_child[1]);
+        close(to_parent[0]);
+
         read(to_child[0], &received, 1);
-        printf("%d: received ping\n", getpid());
-        write(to_parent[1], "b", 1);
+        printf("%d Received ping\n", getpid());
+        write(to_parent[1], &received, 1);
+
+        close(to_child[0]);
+        close(to_parent[1]);
     }
     else {
-        // parent
-        write(to_child[1], "b", 1);
-        char received;
+
+        close(to_child[0]);
+        close(to_parent[1]);
+
+        write(to_child[1], &received, 1);
         read(to_parent[0], &received, 1);
-        printf("%d: received pong\n", getpid());
+        printf("%d Received pong\n", getpid());
+
+        close(to_child[1]);
+        close(to_parent[0]);
     }
+
     exit(0);
 
     

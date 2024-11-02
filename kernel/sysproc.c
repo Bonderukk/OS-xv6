@@ -73,20 +73,19 @@ sys_sleep(void)
 
 
 #ifdef LAB_PGTBL
-int
+uint64
 sys_pgpte(void)
 {
   uint64 va;
-  struct proc *p;  
-
-  p = myproc();
   argaddr(0, &va);
-  pte_t *pte = pgpte(p->pagetable, va);
-  if(pte != 0) {
-      return (uint64) *pte;
-  }
-  return 0;
+  
+  struct proc *p = myproc();
+  pte_t *pte = walk(p->pagetable, va, 0);
+  if(pte == 0)
+    return 0;
+  return *pte;
 }
+
 #endif
 
 #ifdef LAB_PGTBL

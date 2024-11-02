@@ -486,11 +486,38 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   }
 }
 
+void vmprint_level(pagetable_t pagetable, int level, uint64 va) {
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V) {
+      // Vypíš odsadenie podľa úrovne
+      for(int j = 0; j < level; j++)
+        printf(".. ");
+      
+      uint64 child = PTE2PA(pte);
+      uint64 new_va = va | ((uint64)i << (9 * (2 - level) + 12));
+      
+      // Vypíš virtuálnu adresu namiesto indexu
+      printf("..0x%lx: ", new_va);
+      
+      if(level == 0)
+        printf("pte 0x%lx pa 0x%lx perm 0x%lx\n", pte, child, PTE_FLAGS(pte));
+      else
+        printf("pte 0x%lx pa 0x%lx\n", pte, child);
+
+      // Ak nie je list a sme na úrovni > 0, rekurzívne spracuj ďalšiu úroveň
+      if(level > 0 && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
+        vmprint_level((pagetable_t)child, level-1, new_va);
+    }
+  }
+}
 
 #ifdef LAB_PGTBL
 void
 vmprint(pagetable_t pagetable) {
-  // your code here
+  printf("page table %p\n", pagetable);
+  vmprint_level(pagetable, 2, 0);
 }
 #endif
 

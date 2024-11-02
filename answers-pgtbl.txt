@@ -1,0 +1,5 @@
+1. Stránkovanie v RISC-V používa 3-úrovňovú hierarchickú tabuľku stránok, kde každá úroveň používa 9 bitov z virtuálnej adresy na indexovanie. Každá položka v tabuľke (PTE) obsahuje fyzickú adresu nasledujúcej úrovne tabuľky alebo fyzickú adresu samotnej stránky, plus príznaky ako platnosť, práva na čítanie/zápis/vykonávanie.
+
+2. Optimalizácia getpid() je implementovaná pomocou zdieľanej stránky medzi jadrom a používateľským priestorom. Táto stránka obsahuje štruktúru usyscall s PID procesu, ktorý je prístupný len na čítanie z používateľského priestoru. To eliminuje potrebu prepnutia do jadrového režimu pri získavaní PID.
+
+3. Mapovanie pamäte medzi jadrom a používateľským priestorom je dôležité pre efektívnu komunikáciu a zdieľanie dát. V prípade getpid() optimalizácie umožňuje priamy prístup k PID bez systémového volania, čo zlepšuje výkon.

@@ -315,7 +315,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -328,17 +328,63 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // zrus W
     // nastav COW
     flags = PTE_FLAGS(*pte);
+    if (*pte & PTE_W) {
+        // Remove W flag
+        *pte &= ~PTE_W;
+        // Set COW flag
+        *pte |= PTE_COW;
+    }
     //alokaciu zrusit
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    //if((mem = kalloc()) == 0)
+      //goto err;
+    //memmove(mem, (char*)pa, PGSIZE);
+    // new je page table, i je virtualna adresa, PGSIZE mapujem jednu stranku
+    // pa
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      //kfree(mem);
       goto err;
     }
-  }
+    get_page((void *)pa);  }
   return 0;
 
+//Handle COW trap
+//Return 0 if handled, -1 on error
+int
+uvmcow(pagetable_t pagetable, uint64 fault_va) {
+  pte_t *pte;
+  char *pa;
+
+  if((pte = walk(pagetable, fault_va, 0)) == 0)
+    return -1;
+  if((*pte & PTE_V) == 0) 
+    return -1;
+  if((*pte & PTE_COW) == 0)
+    return -1;
+  
+  //if((pa = kalloc()) == 0)
+  //  goto err;
+
+  uint64 old_pa = PTE2PA(*pte);
+  memmove(pa, (char*)old_pa, PGSIZE);
+  uint64 flags = PTE_FLAGS(*pte);
+  flags &= ~PTE_COW;
+  flags |= PTE_W;
+
+  if(mappages(pagetable, PGROUNDDOWN(fault_va), PGSIZE, (uint64)pa, flags) != 0) {
+    kfree(pa);
+    return -1;
+  }
+
+  return 0;
+  // pte = ziskaj pte zaznam
+  // ak bola povodne zapisovatelna
+  //      pa = alokuj stranku
+  //      skopiruj stranku
+  //      flags = odstran COW, nastav W z pte
+  //      namapuj stranku s priznakmi flags
+  //      vrat 0
+  // vrat -1
+}
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;

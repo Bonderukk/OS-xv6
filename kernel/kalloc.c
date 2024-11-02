@@ -9,6 +9,8 @@
 #include "riscv.h"
 #include "defs.h"
 
+#define PGINDEX(pa) (((uint64)(pa) - (uint64)kmem.refcount) /PGSIZE);
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -21,6 +23,7 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+  int *refcount;
 } kmem;
 
 void
@@ -35,6 +38,20 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
+  kmem.refcount=(int *)p;
+  // Kolko mame stranok celkovo k dispozicii pre alokator
+  uint64 pages = ((uint64)pa_end - (uint64)kmem.refcount) / PGSIZE;
+  // Kolko stranok ubde mat pole refcount ?
+  uint64 refcount_pages=(pages * sizeof(int) + PGSIZE +- 1) /PGSIZE;
+  // uint64 refcount_pages=PGROUNDUP(pages * sizeof(int)) /PGSIZE;
+  // uint64 refcount_pages=(pages * sizeof(*kmem.refcount) + PGSIZE +- 1) /PGSIZE;
+  // TODO: incializovat
+  for(int i = 0; i<refcount_pages;i++) {
+    kmem.refcount[i] = 2;;
+  }
+  for(int i = refcount_pages; i< pages;i++) {
+    kmem.refcount_pages[i] = 1;
+  }
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
 }
@@ -57,6 +74,10 @@ kfree(void *pa)
   r = (struct run*)pa;
 
   acquire(&kmem.lock);
+  kmem.refcount[PGINDEX(r)]--;
+  if(kmem.refcount[PGINDEX(r)]) {
+    return 
+  }
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
@@ -72,11 +93,24 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+  // nastav pocet referencii na nulu
+    kmem.refcount[PGINDEX(r)];
+  }
+  // Nieco este zle tu mam
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+void 
+get_page(void *pa) {
+  acquire(&kmem.lock);
+  kmem.refcount[PGINDEX(r)]--;
+  release(&kmem.lock);
+  }
+
+  

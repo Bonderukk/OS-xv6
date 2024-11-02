@@ -165,6 +165,7 @@ panic(char *s)
   pr.locking = 0;
   printf("panic: ");
   printf("%s\n", s);
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -175,4 +176,28 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  
+  printf("backtrace:\n");
+  
+  // Prechádzame zásobníkové rámce
+  while(fp) {
+    // Skontrolujeme, či je fp platná adresa
+    if(PGROUNDDOWN(fp) != PGROUNDDOWN(r_fp()))
+      break;
+      
+    // Návratová adresa je uložená na fp-8
+    uint64 return_addr = *(uint64*)(fp - 8);
+    
+    // Vypíšeme adresu v požadovanom formáte (0x + 16 hexadecimálnych číslic)
+    printf("%p\n", (void*)return_addr);
+    
+    // Predchádzajúci frame pointer je uložený na fp-16
+    fp = *(uint64*)(fp - 16);
+  }
 }

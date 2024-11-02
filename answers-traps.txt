@@ -1,0 +1,12 @@
+1. a0 obsahuje návratovú hodnotu systémového volania. Pri úspešnom volaní je to 0 alebo kladné číslo, pri chybe je to záporné číslo.
+
+2. Kernel používa frame pointer (fp/s0) na sledovanie zásobníkových rámcov. Každý rámec obsahuje:
+   - na fp-8: návratovú adresu
+   - na fp-16: ukazovateľ na predchádzajúci rámec
+   Toto umožňuje prechádzať históriu volaní funkcií.
+
+3. Výstup addr2line ukazuje, že backtrace prechádza cez:
+   - sys_sleep v kernel/sysproc.c
+   - syscall v kernel/syscall.c
+   - usertrap v kernel/trap.c
+   Toto je typická cesta systémového volania od užívateľského programu do jadra.

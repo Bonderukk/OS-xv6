@@ -86,7 +86,7 @@ pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
-    panic("walk");
+    return 0;
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
@@ -187,7 +187,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      continue;  // Skip if not mapped
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -315,76 +315,32 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+    
     pa = PTE2PA(*pte);
-    //Nastavenie priznakov
-    //Ak je nastavny W:
-    // zrus W
-    // nastav COW
     flags = PTE_FLAGS(*pte);
-    if (*pte & PTE_W) {
-        // Remove W flag
-        *pte &= ~PTE_W;
-        // Set COW flag
-        *pte |= PTE_COW;
+    
+    // If page is writable, make it COW
+    if(flags & PTE_W) {
+      flags &= ~PTE_W;  // Remove write permission
+      flags |= PTE_COW; // Set COW flag
+      *pte = PA2PTE(pa) | flags;  // Update parent's PTE
     }
-    //alokaciu zrusit
-    //if((mem = kalloc()) == 0)
-      //goto err;
-    //memmove(mem, (char*)pa, PGSIZE);
-    // new je page table, i je virtualna adresa, PGSIZE mapujem jednu stranku
-    // pa
-    if(mappages(new, i, PGSIZE, pa, flags) != 0){
-      //kfree(mem);
+
+    // Map the same physical page in child
+    if(mappages(new, i, PGSIZE, pa, flags) != 0)
       goto err;
-    }
-    get_page((void *)pa);  }
-  return 0;
-
-//Handle COW trap
-//Return 0 if handled, -1 on error
-int
-uvmcow(pagetable_t pagetable, uint64 fault_va) {
-  pte_t *pte;
-  char *pa;
-
-  if((pte = walk(pagetable, fault_va, 0)) == 0)
-    return -1;
-  if((*pte & PTE_V) == 0) 
-    return -1;
-  if((*pte & PTE_COW) == 0)
-    return -1;
-  
-  //if((pa = kalloc()) == 0)
-  //  goto err;
-
-  uint64 old_pa = PTE2PA(*pte);
-  memmove(pa, (char*)old_pa, PGSIZE);
-  uint64 flags = PTE_FLAGS(*pte);
-  flags &= ~PTE_COW;
-  flags |= PTE_W;
-
-  if(mappages(pagetable, PGROUNDDOWN(fault_va), PGSIZE, (uint64)pa, flags) != 0) {
-    kfree(pa);
-    return -1;
+    
+    // Increment reference count for the physical page
+    get_page((void*)pa);
   }
-
   return 0;
-  // pte = ziskaj pte zaznam
-  // ak bola povodne zapisovatelna
-  //      pa = alokuj stranku
-  //      skopiruj stranku
-  //      flags = odstran COW, nastav W z pte
-  //      namapuj stranku s priznakmi flags
-  //      vrat 0
-  // vrat -1
-}
+
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
@@ -410,21 +366,34 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-  pte_t *pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     if(va0 >= MAXVA)
       return -1;
-    pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
+
+    pte_t *pte = walk(pagetable, va0, 0);
+    if(pte == 0)
       return -1;
+    
+    if((*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
+      return -1;
+
+    // Handle COW page
+    if((*pte & PTE_COW)){
+      if(uvmcow(pagetable, va0) < 0)
+        return -1;
+    } else if((*pte & PTE_W) == 0) {
+      // If page is not writable and not COW, fail
+      return -1;
+    }
+
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
+
+    memmove((void*)(pa0 + (dstva - va0)), src, n);
 
     len -= n;
     src += n;
@@ -499,4 +468,51 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int
+uvmcow(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+  uint64 pa;
+  uint flags;
+  char *mem;
+
+  va = PGROUNDDOWN(va);
+  
+  if((pte = walk(pagetable, va, 0)) == 0)
+    return -1;
+  if((*pte & PTE_V) == 0)
+    return -1;
+  if((*pte & PTE_COW) == 0)
+    return -1;
+
+  pa = PTE2PA(*pte);
+  flags = PTE_FLAGS(*pte);
+
+  // Allocate new page
+  if((mem = kalloc()) == 0)
+    return -1;
+
+  // Copy the old page
+  memmove(mem, (char*)pa, PGSIZE);
+
+  // Update flags: remove COW, add write permission
+  flags &= ~PTE_COW;
+  flags |= PTE_W;
+
+  // Unmap old page first
+  *pte = 0;
+  
+  // Map the new page
+  if(mappages(pagetable, va, PGSIZE, (uint64)mem, flags) != 0) {
+    kfree(mem);
+    *pte = PA2PTE(pa) | flags; // Restore old mapping
+    return -1;
+  }
+
+  // Free old page if reference count reaches 0
+  kfree((void*)pa);
+
+  return 0;
 }

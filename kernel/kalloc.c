@@ -9,7 +9,7 @@
 #include "riscv.h"
 #include "defs.h"
 
-#define PGINDEX(pa) (((uint64)(pa) - (uint64)kmem.refcount) /PGSIZE);
+#define PGINDEX(pa) (((uint64)(pa) - (uint64)kmem.refcount) / PGSIZE)
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -38,20 +38,26 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  kmem.refcount=(int *)p;
-  // Kolko mame stranok celkovo k dispozicii pre alokator
+  
+  // Initialize refcount array at the start of free memory
+  kmem.refcount = (int*)p;
+  
+  // Calculate total pages and refcount array size
   uint64 pages = ((uint64)pa_end - (uint64)kmem.refcount) / PGSIZE;
-  // Kolko stranok ubde mat pole refcount ?
-  uint64 refcount_pages=(pages * sizeof(int) + PGSIZE +- 1) /PGSIZE;
-  // uint64 refcount_pages=PGROUNDUP(pages * sizeof(int)) /PGSIZE;
-  // uint64 refcount_pages=(pages * sizeof(*kmem.refcount) + PGSIZE +- 1) /PGSIZE;
-  // TODO: incializovat
-  for(int i = 0; i<refcount_pages;i++) {
-    kmem.refcount[i] = 2;;
+  uint64 refcount_pages = (pages * sizeof(int) + PGSIZE - 1) / PGSIZE;
+  
+  // Initialize refcount array
+  for(int i = 0; i < refcount_pages; i++) {
+    kmem.refcount[i] = 1;  // Pages used by refcount array
   }
-  for(int i = refcount_pages; i< pages;i++) {
-    kmem.refcount_pages[i] = 1;
+  for(int i = refcount_pages; i < pages; i++) {
+    kmem.refcount[i] = 0;  // Free pages
   }
+
+  // Skip the pages used by refcount array
+  p += refcount_pages * PGSIZE;
+  
+  // Free the remaining pages
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
 }
@@ -68,18 +74,21 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
-
   acquire(&kmem.lock);
-  kmem.refcount[PGINDEX(r)]--;
-  if(kmem.refcount[PGINDEX(r)]) {
-    return 
+  
+  // Decrease reference count
+  int idx = PGINDEX(pa);
+  if(--kmem.refcount[idx] > 0) {
+    release(&kmem.lock);
+    return;
   }
+  
+  // If refcount reaches 0, free the page
+  memset(pa, 1, PGSIZE); // Fill with junk
+  r = (struct run*)pa;
   r->next = kmem.freelist;
   kmem.freelist = r;
+  
   release(&kmem.lock);
 }
 
@@ -95,22 +104,25 @@ kalloc(void)
   r = kmem.freelist;
   if(r) {
     kmem.freelist = r->next;
-  // nastav pocet referencii na nulu
-    kmem.refcount[PGINDEX(r)];
+    // Initialize reference count to 1 for newly allocated page
+    kmem.refcount[PGINDEX(r)] = 1;
   }
-  // Nieco este zle tu mam
   release(&kmem.lock);
 
   if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
+    memset((char*)r, 5, PGSIZE); // Fill with junk
   return (void*)r;
 }
 
+// Increment reference count for a page
 void 
 get_page(void *pa) {
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("get_page");
+    
   acquire(&kmem.lock);
-  kmem.refcount[PGINDEX(r)]--;
+  kmem.refcount[PGINDEX(pa)]++;
   release(&kmem.lock);
-  }
+}
 
   

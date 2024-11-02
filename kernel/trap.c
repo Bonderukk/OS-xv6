@@ -65,12 +65,10 @@ usertrap(void)
     intr_on();
 
     syscall();
-  else if(r_scause() == 15) {
+  } else if(r_scause() == 15) {
     //dopisat obsluhu
-    if(uvmcow(p->pagetable, r_stval()))
-      setkilled(p);
-    
-  }
+    if(uvmcow(p->pagetable, r_stval()) < 0)
+      p->killed = 1;
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

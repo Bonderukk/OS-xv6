@@ -104,9 +104,10 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  int alarm_interval;         // interval pre alarm
-  void (*alarm_handler)();    // pointer na alarm handler funkciu
-  int alarm_ticks;           // počítadlo tikov
-  int alarm_going;           // či práve prebieha alarm
-  struct trapframe *alarm_tf; // kópia trapframe pre sigreturn
+  
+  // Alarm fields
+  int ticks;              // Interval medzi alarmami
+  uint64 handler;         // Handler funkcia
+  int duration;           // Počítadlo tikov
+  struct trapframe state_time;  // Záloha stavu pre návrat
 };

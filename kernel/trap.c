@@ -76,26 +76,19 @@ usertrap(void)
   if(killed(p))
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2) {
-    if(p->alarm_interval > 0) {
-      p->alarm_ticks++;
-      if(p->alarm_ticks >= p->alarm_interval && !p->alarm_going) {
-        p->alarm_ticks = 0;
-        p->alarm_going = 1;
-        
-        // Save complete trapframe including a0
-        if(p->alarm_tf == 0)
-          p->alarm_tf = kalloc();
-        if(p->alarm_tf) {
-          memmove(p->alarm_tf, p->trapframe, sizeof(struct trapframe));
-          // Set up return to alarm handler
-          p->trapframe->epc = (uint64)p->alarm_handler;
-        }
+  if(which_dev == 2) {  // timer interrupt
+  struct proc *p = myproc();
+  if(p->ticks > 0 && p->duration > -1) {  // Ak je alarm aktívny
+    p->duration++;
+    if(p->duration >= p->ticks) {  // Čas vypršal
+      p->state_time = *p->trapframe;  // Ulož stav
+      p->duration = -1;  // Označ že handler beží
+      p->trapframe->epc = p->handler;  // Skoč na handler
       }
     }
     yield();
   }
+  
 
   usertrapret();
 }

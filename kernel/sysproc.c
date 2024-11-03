@@ -98,30 +98,19 @@ uint64
 sys_sigreturn(void)
 {
   struct proc *p = myproc();
-  
-  if(p->alarm_tf) {
-    memmove(p->trapframe, p->alarm_tf, sizeof(struct trapframe));
-    p->alarm_going = 0;
-    return p->alarm_tf->a0;
-  }
-  
-  return 0;
+  *p->trapframe = p->state_time;  // Obnov pôvodný stav
+  p->duration = 0;  // Reset počítadla pre ďalší alarm
+  return p->trapframe->a0;  // Vráť pôvodnú hodnotu a0
 }
 
 uint64
 sys_sigalarm(void)
 {
-  int interval;
-  uint64 handler;
   struct proc *p = myproc();
-
-  argint(0, &interval);
-  argaddr(1, &handler);
-
-  p->alarm_interval = interval;
-  p->alarm_handler = (void(*)())handler;
-  p->alarm_ticks = 0;
-  p->alarm_going = 0;
-
+  
+  argint(0, &p->ticks);
+  argaddr(1, &p->handler);
+  
+  p->duration = 0;  // Reset počítadla
   return 0;
 }

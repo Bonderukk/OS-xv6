@@ -110,7 +110,5 @@ sys_sigalarm(void)
   
   argint(0, &p->ticks);
   argaddr(1, &p->handler);
-  
-  p->duration = 0;  // Reset počítadla
   return 0;
 }

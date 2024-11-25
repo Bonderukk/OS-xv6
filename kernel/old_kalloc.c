@@ -9,6 +9,8 @@
 #include "riscv.h"
 #include "defs.h"
 
+#define nameSize 16
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -21,13 +23,26 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+  char name[nameSize];
+} kmems[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+    for(int i = 0; i<NCPU; i++) {
+        snprintf(kmems[i].name, nameSize, "kmem.cpu%d", i);
+        initlock(&kmems[i].lock, "kmem");
+        
+    }
+    freerange(end, (void*)PHYSTOP);
+}
+
+
+uint getCPUId() {
+    push_off();
+    uint cpu = cpuid();
+    pop_off();
+    return cpu;
 }
 
 void
@@ -56,11 +71,35 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  uint cpu = getCPUId();
+  acquire(&kmems[cpu].lock);
+  r->next = kmems[cpu].freelist;
+  kmems[cpu].freelist = r;
+  release(&kmems[cpu].lock);
 }
+
+
+struct run* steal(uint cpu) {
+    struct run *stolen = 0;
+
+    for(int i = 0; i < NCPU; i++) {
+        if(i == cpu) continue;
+
+        acquire(&kmems[i].lock);
+
+        if(kmems[i].freelist) {
+            stolen = kmems[i].freelist;
+            kmems[i].freelist = stolen->next;
+            release(&kmems[i].lock);
+            return stolen;
+        }
+        release(&kmems[i].lock);
+
+    }
+    return 0;
+}
+
+
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
@@ -69,12 +108,17 @@ void *
 kalloc(void)
 {
   struct run *r;
+  uint cpu = getCPUId();
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  acquire(&kmems[cpu].lock);
+  r = kmems[cpu].freelist;
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmems[cpu].freelist = r->next;
+  release(&kmems[cpu].lock);
+
+  if(r == 0) {
+    r = steal(cpu);
+  }
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk

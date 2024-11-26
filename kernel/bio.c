@@ -24,7 +24,7 @@
 #include "buf.h"
 
 #define NBUCKETS 13
-#define BUCKET(blockno)((blockno) % NBUCKETS)
+#define BUCKET(blockno) ((blockno) % NBUCKETS)
 
 struct {
   struct buf buf[NBUF];
@@ -37,16 +37,17 @@ void
 binit(void)
 {
   struct buf *b;
+
   initlock(&bcache.evictlock, "bcache.evictlock");
-  for (int i = 0; i < NBUCKETS; i++) {
-  	initlock(&bcache.lock[i], "bcache");
-  	
-  	bcache.head[i].prev = &bcache.head[i];
+  
+  for(int i = 0; i < NBUCKETS; i++) {
+    initlock(&bcache.lock[i], "bcache");
+    bcache.head[i].prev = &bcache.head[i];
     bcache.head[i].next = &bcache.head[i];
   }
-  
+
   for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-  	int bucket = BUCKET(b->blockno);
+    int bucket = BUCKET(b->blockno);
     b->next = bcache.head[bucket].next;
     b->prev = &bcache.head[bucket];
     initsleeplock(&b->lock, "buffer");
@@ -55,10 +56,12 @@ binit(void)
   }
 }
 
+
 void
 moveBucket(struct buf* b, uint bucket) {
     b->next->prev = b->prev;
     b->prev->next = b->next;
+
     b->next = bcache.head[bucket].next;
     b->prev = &bcache.head[bucket];
     bcache.head[bucket].next->prev = b;
@@ -73,6 +76,7 @@ bget(uint dev, uint blockno)
 {
   struct buf *b;
   int bucket = BUCKET(blockno);
+
   acquire(&bcache.lock[bucket]);
 
   // Is the block already cached?
@@ -85,35 +89,40 @@ bget(uint dev, uint blockno)
     }
   }
 
-  // Not cached.
-  // Recycle the least recently used (LRU) unused buffer.
+  // Blok nie je v cache, musíme nájsť voľný buffer
   release(&bcache.lock[bucket]);
   acquire(&bcache.evictlock);
   acquire(&bcache.lock[bucket]);
-  
-  for(b = bcache.buf; b != bcache.buf + NBUF; b++){
-  	int evbucket = BUCKET(b->blockno);
-	if (evbucket != bucket) {
-		acquire(&bcache.lock[evbucket]);
-	}
-	
+
+  // Not cached.
+  // Recycle the least recently used (LRU) unused buffer.
+  for(b = bcache.buf; b < bcache.buf + NBUF; b++){
+    int evbucket = BUCKET(b->blockno);
+
+    if(evbucket != bucket) {
+        acquire(&bcache.lock[evbucket]);
+    }
+
     if(b->refcnt == 0) {
       b->dev = dev;
       b->blockno = blockno;
       b->valid = 0;
       b->refcnt = 1;
-  	  if (evbucket != bucket) {
-  	  	moveBucket(b, bucket);
-	  	release(&bcache.lock[evbucket]);
-	  }
+      
+      if(evbucket != bucket) {
+        moveBucket(b,bucket);
+        release(&bcache.lock[evbucket]);
+      }
+      
       release(&bcache.evictlock);
       release(&bcache.lock[bucket]);
       acquiresleep(&b->lock);
+
       return b;
     }
 
-    if (evbucket != bucket) {
-  	  release(&bcache.lock[evbucket]);
+    if(evbucket != bucket) {
+        release(&bcache.lock[evbucket]);
     }
   }
   panic("bget: no buffers");

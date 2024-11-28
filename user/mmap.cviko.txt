@@ -1,0 +1,239 @@
+vm.h
+====
+struct vma {
+  uint64 addr;           // VMA is unused if `addr' is VMA_FREE.
+  size_t len;            // Length of the VMA.
+  int prot;              // PROT_NONE, PROT_READ, PROT_WRITE, PROT_EXEC
+  int flags;             // MAP_SHARED, MAP_PRIVATE
+  struct file *file;     // Mapped file.
+  off_t offset;          // Should be always zero.
+
+  pagetable_t pagetable; // For mappages() in vma_fault().
+};
+
+sysfile.c
+=========
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  size_t len;
+  int prot, flags;
+  struct file *file;
+  off_t offset;
+  struct proc *p = myproc();
+  struct vma *vma;
+
+  // 0) Get syscall arguments.
+  argaddr(0, &addr);
+  offset = (off_t)p->trapframe->a5;
+  len = (size_t)p->trapframe->a1;
+  argint(2, &prot);
+  argint(3, &flags);
+  if(argfd(4, 0, &file) < 0)
+    return -1;
+
+  // 1) `addr' and `offset' should be always 0.
+  if(addr || offset)
+    return -1;
+
+  // TODO:
+  // 2) Validity checks:
+  // - `offset' should be multiple of PGSIZE
+  if(offset % PGSIZE)
+    return -1;
+  // - `len' should be greather than 0
+  if(!len)
+    return -1;
+  // - Prot must be only combination of PROT_READ, PROT_WRITE, PROT_EXEC.
+  // - If prot is READ, file must be readable to permit pgfault handling.
+  // - If prot is write and flags shared, file must be writable.
+  // - flags must be only MAP_SHARED **or** MAP_PRIVATE.
+
+  // 3) Alloc a new VMA.
+  vma = proc_vma_alloc(p, addr, len);
+  if(vma == 0)
+    return -1;
+
+  // 4) Fill the VMA fields.
+  vma->prot = prot;
+  vma->flags = flags;
+  vma->file = file;
+  vma->offset = offset;
+  filedup(file);
+  vma->pagetable = p->pagetable;
+
+  // 5) Return starting address of the VMA.
+  return vma->addr;
+}
+
+trap.c
+======
+void
+usertrap(void)
+{
+  } else {
+    if(vma_fault(r_stval(), r_scause()) == 0)   <--- pridany riadok
+      goto vma_ok;                              <--- pridany riadok
+    printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+    printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    setkilled(p);
+  }
+
+vma_ok:                                         <--- pridany riadok
+  if(killed(p))
+    exit(-1);
+
+vm.c
+====
+static inline int
+vma_cause2prot(int cause)
+{
+  // Translate `cause' to PROT_XYZ.
+  switch(cause){
+  case PF_X: return PROT_EXEC;
+  case PF_R: return PROT_READ;
+  case PF_W: return PROT_WRITE;
+  }
+  return PROT_NONE;
+}
+
+static inline int
+vma_prot2flags(int prot)
+{
+  int flags = 0;
+
+  if(prot & PROT_EXEC)
+    flags |= PTE_X;
+  if(prot & PROT_READ)
+    flags |= PTE_R;
+  if(prot & PROT_WRITE)
+    flags |= PTE_W;
+
+  // TODO:
+  // 1) On RISC-V PTE combination PTE_W only is reserved for future use.
+  // 2) On RISC-V PTE combination PTE_W | PTE_X is reserved for future use.
+
+  return flags;
+}
+
+
+       <--------------vma.file.ip.size----------------->
+file: |  |  |  |  |  |  |  |  |  |  | ... |  |  |  |  |X|
+       <------vma.offset-------------------->/  /  /  /
+                                            /  /  /  /
+                                           /  /  /  /  
+vma:                         vma.addr --->|  |  |  |X |  |  |
+                                           <vma.len-------->
+                                                    ^
+                                                    |
+                                                   addr
+
+inline int
+vma_getblocklen(struct vma *vma, uint64 addr)
+{
+  // TODO:
+  // 1) Compute remaining length `len' of the VMA.
+  // 2) If `len' is greather than PGSIZE, truncate the `len' to PGSIZE.
+  // 3) Compute remaining length `flen' of the file.
+  // 4) If `len' is greather than `flen', truncate the `len' to `flen'.
+  // 5) Return `len'.
+
+  return 0;
+}
+
+int
+vma_fault(uint64 addr, int cause)
+{
+  int prot;
+  struct vma *vma;
+  char *data;
+
+  // 0) Translate `cause' to protection flag. If the resulting prot is
+  //    PROT_NONE, the trap is not about VMA mapping.
+  prot = vma_cause2prot(cause);
+  if(prot == PROT_NONE)
+    return -1;
+
+  // 1) Round down the `addr' and found the corresponding VMA, if any.
+  addr = PGROUNDDOWN(addr);
+  vma = proc_vma_find(addr);
+  if(!vma)
+    return -1;
+
+  // 2) Check `cause' with respect a VMA's prot flags. If there is no
+  //    intersection, the trap is unauthorized.
+  if((prot & vma->prot) == PROT_NONE)
+    return -1;
+
+  // 3) Allocate a page and zero it.
+  data = kalloc();
+  if(!data)
+    return -1;
+  memset(data, '\0', PGSIZE);
+
+  // 4) Read max PGSIZE from a file. Attention: the last chunk may be less than
+  //    PGSIZE, it is OK. Note: Choose the offset in the file carefully with
+  //    respect to `addr', `vma->addr' and `vma->offset', too. Inode should be
+  //    locked when reading from the file.
+  ilock(vma->file->ip);
+  readi(vma->file->ip, 0, (uint64)data, addr - vma->addr + vma->offset, PGSIZE);
+  iunlock(vma->file->ip);
+
+  // 5) Map a data page. Translate VMA's ->prot flags into corresponding RISC-V
+  //    PTE flags (i.e. see RISC-V Privileged Manual for valid combinations of
+  //    PTE R/W/X bits in Table 5.5). If mapping fails, release resources.
+  if(mappages(vma->pagetable, addr, PGSIZE, (uint64)data, vma_prot2flags(vma->prot) | PTE_U) < 0){
+    kfree(data);
+    return -1;
+  }
+
+  // 6) Return success.
+  return 0;
+}
+
+sysfile.c
+=========
+uint64
+sys_munmap(void)
+{
+  // TODO:
+  // 0) Get syscall arguments.
+  // 1) `addr' should be page aligned.
+  // 2) Find a VMA related to `addr', if any.
+  // 3) Ignore unmapping behind the VMA.
+  // 4) Check unmapping inside the VMA. Panic, not implemented yet.
+  // 5) Unmap and free pages of the VMA via proc_vma_unmap()
+  return -1;
+}
+
+proc.c
+======
+void
+proc_vma_unmap(struct vma *vma, uint64 addr, size_t len)
+{
+  // TODO:
+  // 0) For each page in VMA:
+  //    - if page is not mapped, skip it
+  //    - if MAP_SHARED (and page is dirty), write it back into the file.
+  //      Write max PGSIZE to a file per page. Attention: the last chunk may be
+  //      less than PGSIZE. It is **NOT OK** to write the whole page to a file.
+  //      Note: Choose the offset in the file carefully with respect to `addr',
+  //      `vma->addr' and `vma->offset', too. Hints:
+  //      *) use writei()
+  //      *) while calling writei(), inode should be locked
+  //      *) writing to the file should be enclosed in transaction, use
+  //         begin_op() and end_op()
+  //      *) length of the data to be written compute with vma_getblocklen()
+  //    - free the page
+  //    - unmap the page
+
+  // 1) Update VMA size:
+  //    A) if addr > vma->addr:
+  //       remaining interval is [vma->addr; addr); so update `vma->len'.
+  //    B) if addr == vma->addr:
+  //       remains [PGROUNDDOWN(vma->addr + len); vma->addr + vma->len);
+  //       update `vma->addr', `vma->len' and `vma->offset' (!)
+
+  // 2) If VMA was exhausted, free it. Don't forget dec refcnt of the vma->file.
+}

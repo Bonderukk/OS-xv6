@@ -5,6 +5,8 @@ _*
 *.asm
 *.sym
 *.img
+*.img.bk
+*.bk
 vectors.S
 bootblock
 entryother
@@ -21,6 +23,8 @@ xv6.out*
 submissions/
 ph
 barrier
+fs.img.bk
+fs.img
 /lab-*.json
 .DS_Store
 *.dSYM

@@ -73,6 +73,9 @@ sys_read(void)
   uint64 p;
 
   argaddr(1, &p);
+  if(p == 0)
+    return -1;
+  
   argint(2, &n);
   if(argfd(0, 0, &f) < 0)
     return -1;
@@ -87,6 +90,9 @@ sys_write(void)
   uint64 p;
   
   argaddr(1, &p);
+  if(p == 0)
+    return -1;
+  
   argint(2, &n);
   if(argfd(0, 0, &f) < 0)
     return -1;
